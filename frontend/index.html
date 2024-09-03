@@ -66,7 +66,7 @@
     <!-- 保持原有的HTML结构 -->
 
     <script>
-        const API_URL = 'http://localhost:3000/api'; // 替换为您的实际API URL
+        const API_BASE_URL = 'https://zhengzhou-traffic-system.herokuapp.com';
 
         // 初始化百度地图
         let map;
@@ -187,7 +187,7 @@
 
         async function saveRouteToServer(start, end, distance, duration) {
             try {
-                const response = await fetch(`${API_URL}/save-route`, {
+                const response = await fetch(`${API_BASE_URL}/save-route`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -207,7 +207,7 @@
 
         async function initGraph() {
             try {
-                const response = await fetch(`${API_URL}/graph-data`);
+                const response = await fetch(`${API_BASE_URL}/graph-data`);
                 if (!response.ok) {
                     throw new Error('Failed to fetch graph data');
                 }
@@ -258,7 +258,7 @@
 
         async function showNodeDetails(nodeId) {
             try {
-                const response = await fetch(`${API_URL}/node-details/${nodeId}`);
+                const response = await fetch(`${API_BASE_URL}/node-details/${nodeId}`);
                 if (!response.ok) {
                     throw new Error('Failed to fetch node details');
                 }
