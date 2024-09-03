@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>郑州市交通优化可视化系统</title>
+    <script type="text/javascript" src="https://api.map.baidu.com/api?v=3.0&ak=0w8W4vPTaRFyzlaSSxnARGdEYpdqnDEs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.2/dist/vis-network.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/vis-network@9.1.2/dist/dist/vis-network.min.css" rel="stylesheet" type="text/css" />
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .suggestion-list { 
+            position: absolute; 
+            background: white; 
+            border: 1px solid #ccc; 
+            max-height: 200px; 
+            overflow-y: auto; 
+            width: 100%; 
+            z-index: 1000;
+        }
+        .suggestion-item {
+            padding: 5px;
+            cursor: pointer;
+        }
+        .suggestion-item:hover {
+            background-color: #f0f0f0;
+        }
+        /* 保持原有的样式 */
+    </style>
+</head>
+<body class="bg-gray-100">
+    <nav class="bg-blue-600 p-4 text-white">
+        <h1 class="text-2xl font-bold">郑州市交通优化可视化系统</h1>
+    </nav>
+    <div class="container mx-auto mt-8 p-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">地图视图</h2>
+                <div id="map" class="h-96 w-full mb-4"></div>
+                <div class="space-y-4">
+                    <div class="relative">
+                        <input id="start" type="text" placeholder="起点" class="w-full p-2 border rounded">
+                        <div id="startSuggestions" class="suggestion-list"></div>
+                    </div>
+                    <div class="relative">
+                        <input id="end" type="text" placeholder="终点" class="w-full p-2 border rounded">
+                        <div id="endSuggestions" class="suggestion-list"></div>
+                    </div>
+                    <button onclick="calculateRoute()" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition duration-300">规划路线</button>
+                    <div id="info" class="mt-4 p-4 bg-gray-100 rounded"></div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">知识图谱视图</h2>
+                <div id="graph" class="h-96 w-full mb-4"></div>
+                <button onclick="updateGraphData()" class="w-full bg-green-500 text-white p-2 rounded hover:bg-green-600 transition duration-300">更新图谱数据</button>
+            </div>
+        </div>
+        <div class="mt-8 bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">交通流量分析</h2>
+            <canvas id="trafficChart" class="w-full h-64"></canvas>
+            <div id="dataCollectionStatus" class="mt-4 text-center text-gray-600"></div>
+        </div>
+    </div>
+    <!-- 保持原有的HTML结构 -->
+
+    <script>
+        const API_URL = 'http://localhost:3000/api'; // 替换为您的实际API URL
+
+        // 初始化百度地图
+        let map;
+        let driving;
+        let autocompleteStart;
+        let autocompleteEnd;
+
+        function initMap() {
+            map = new BMap.Map("map");
+            let point = new BMap.Point(113.6253, 34.7466); // 郑州市中心坐标
+            map.centerAndZoom(point, 12);
+            map.enableScrollWheelZoom(true);
+
+            driving = new BMap.DrivingRoute(map, {
+                renderOptions:{map: map, autoViewport: true},
+                onSearchComplete: function(results){
+                    if (driving.getStatus() == BMAP_STATUS_SUCCESS) {
+                        let plan = results.getPlan(0);
+                        let distance = plan.getDistance(true);
+                        let duration = plan.getDuration(true);
+                        document.getElementById('info').innerHTML = `距离：${distance}，预计时间：${duration}`;
+                        
+                        // 将路线信息存入Neo4j
+                        saveRouteToNeo4j(document.getElementById('start').value, document.getElementById('end').value, distance, duration);
+                    } else {
+                        document.getElementById('info').innerHTML = "无法获取路线，错误码：" + driving.getStatus();
+                    }
+                }
+            });
+
+            // 添加交通流量图层
+            var traffic = new BMap.TrafficLayer();
+            map.addTileLayer(traffic);
+
+            // 添加一些示例标记
+            addMarker(new BMap.Point(113.6253, 34.7466), "郑州市中心");
+            addMarker(new BMap.Point(113.6615, 34.7568), "郑州东站");
+
+            // 初始化自动完成
+            initAutocomplete();
+            // 保持原有的地图初始化代码
+        }
+
+        function addMarker(point, title) {
+            let marker = new BMap.Marker(point);
+            map.addOverlay(marker);
+            marker.setTitle(title);
+            marker.addEventListener("click", function(){
+                let infoWindow = new BMap.InfoWindow(title);
+                this.openInfoWindow(infoWindow);
+            });
+            // 保持原有的添加标记代码
+        }
+
+        function initAutocomplete() {
+            autocompleteStart = new BMap.Autocomplete({
+                "input": "start",
+                "location": map
+            });
+            autocompleteEnd = new BMap.Autocomplete({
+                "input": "end",
+                "location": map
+            });
+
+            autocompleteStart.addEventListener("onconfirm", function(e) {
+                var _value = e.item.value;
+                myValue = _value.province + _value.city + _value.district + _value.street + _value.business;
+                document.getElementById("start").value = myValue;
+            });
+
+            autocompleteEnd.addEventListener("onconfirm", function(e) {
+                var _value = e.item.value;
+                myValue = _value.province + _value.city + _value.district + _value.street + _value.business;
+                document.getElementById("end").value = myValue;
+            });
+            // 保持原有的自动完成初始化代码
+        }
+
+        function showLoading(elementId, message) {
+            document.getElementById(elementId).innerHTML = `
+                <div class="flex items-center justify-center">
+                    <svg class="animate-spin h-5 w-5 mr-3 text-blue-500" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    ${message}
+                </div>
+            `;
+            // 保持原有的加载显示代码
+        }
+
+        function calculateRoute() {
+            const start = document.getElementById('start').value;
+            const end = document.getElementById('end').value;
+
+            if (!start || !end) {
+                alert("请输入起点和终点");
+                return;
+            }
+
+            showLoading('info', '正在规划路线...');
+
+            let geocoder = new BMap.Geocoder();
+            geocoder.getPoint(start, function(startPoint){
+                if (startPoint) {
+                    geocoder.getPoint(end, function(endPoint){
+                        if (endPoint) {
+                            driving.search(startPoint, endPoint);
+                        } else {
+                            document.getElementById('info').innerHTML = "无法解析终点地址，请检查输入";
+                        }
+                    }, "郑州市");
+                } else {
+                    document.getElementById('info').innerHTML = "无法解析起点地址，请检查输入";
+                }
+            }, "郑州市");
+        }
+
+        async function saveRouteToServer(start, end, distance, duration) {
+            try {
+                const response = await fetch(`${API_URL}/save-route`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ start, end, distance, duration }),
+                });
+                if (!response.ok) {
+                    throw new Error('Failed to save route');
+                }
+            } catch (error) {
+                console.error('Error saving route:', error);
+            }
+        }
+
+        // 初始化知识图谱可视化
+        let network;
+
+        async function initGraph() {
+            try {
+                const response = await fetch(`${API_URL}/graph-data`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch graph data');
+                }
+                const records = await response.json();
+
+                const nodes = new vis.DataSet();
+                const edges = new vis.DataSet();
+
+                records.forEach(record => {
+                    const source = record.source;
+                    const target = record.target;
+                    const distance = record.distance;
+                    const duration = record.duration;
+
+                    if (!nodes.get(source)) {
+                        nodes.add({ id: source, label: source });
+                    }
+                    if (!nodes.get(target)) {
+                        nodes.add({ id: target, label: target });
+                    }
+
+                    edges.add({ 
+                        from: source, 
+                        to: target, 
+                        label: `${distance}\n${duration}`,
+                        arrows: 'to'
+                    });
+                });
+
+                const container = document.getElementById('graph');
+                const data = { nodes, edges };
+                const options = {
+                    physics: false,
+                    interaction: { hover: true }
+                };
+                network = new vis.Network(container, data, options);
+
+                network.on("click", function (params) {
+                    if (params.nodes.length > 0) {
+                        const nodeId = params.nodes[0];
+                        showNodeDetails(nodeId);
+                    }
+                });
+            } catch (error) {
+                console.error('Error initializing graph:', error);
+            }
+        }
+
+        async function showNodeDetails(nodeId) {
+            try {
+                const response = await fetch(`${API_URL}/node-details/${nodeId}`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch node details');
+                }
+                const records = await response.json();
+                let details = `从 ${nodeId} 出发的路线:\n`;
+                records.forEach(record => {
+                    details += `到 ${record.destination}: 距离 ${record.distance}, 时间 ${record.duration}\n`;
+                });
+                alert(details);
+            } catch (error) {
+                console.error('Error fetching node details:', error);
+            }
+        }
+
+        async function updateGraphData() {
+            showLoading('dataCollectionStatus', '正在更新图谱数据...');
+            
+            await initGraph();
+            
+            document.getElementById('dataCollectionStatus').innerHTML = "数据已更新";
+        }
+
+        // 交通流量图表
+        let trafficChart;
+
+        function initTrafficChart() {
+            const ctx = document.getElementById('trafficChart').getContext('2d');
+            trafficChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '交通流量',
+                        data: [],
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+            // 保持原有的图表初始化代码
+        }
+
+        function updateTrafficChart() {
+            const time = new Date().toLocaleTimeString();
+            const value = Math.floor(Math.random() * 100); // 模拟交通流量数据
+
+            trafficChart.data.labels.push(time);
+            trafficChart.data.datasets[0].data.push(value);
+
+            if (trafficChart.data.labels.length > 10) {
+                trafficChart.data.labels.shift();
+                trafficChart.data.datasets[0].data.shift();
+            }
+
+            trafficChart.update();
+            // 保持原有的图表更新代码
+        }
+
+        // 实时数据更新
+        function startRealTimeUpdates() {
+            setInterval(() => {
+                updateTrafficChart();
+            }, 5000); // 每5秒更新一次
+        }
+
+        // 页面加载完成后初始化
+        window.onload = function() {
+            initMap();
+            initGraph();
+            initTrafficChart();
+            startRealTimeUpdates();
+        };
+    </script>
+</body>
+</html>
