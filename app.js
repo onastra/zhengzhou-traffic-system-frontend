@@ -48,6 +48,19 @@ app.get('/', (req, res) => {
     res.send('Welcome to Zhengzhou Traffic System API');
   });
 
+  app.get('/test-db-connection', async (req, res) => {
+    const session = driver.session();
+    try {
+      const result = await session.run('RETURN "Connection successful" AS message');
+      res.json({ message: result.records[0].get('message') });
+    } catch (error) {
+      console.error('Database connection error:', error);
+      res.status(500).json({ error: 'Failed to connect to database' });
+    } finally {
+      await session.close();
+    }
+  });
+
 app.get('/api/graph-data', async (req, res) => {
     const query = `
         MATCH (n:Location)-[r:ROUTE_TO]->(m:Location)
