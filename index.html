@@ -121,6 +121,23 @@
             // 保持原有的添加标记代码
         }
 
+        async function fetchGraphData() {
+     try {
+       const response = await fetch('https://zhengzhou-traffic-system-af25c13e9653.herokuapp.com/api/graph-data');
+       if (!response.ok) {
+         throw new Error(`HTTP error! status: ${response.status}`);
+       }
+       const data = await response.json();
+       // 使用获取的数据更新图形
+       updateGraph(data);
+     } catch (error) {
+       console.error('Error fetching graph data:', error);
+     }
+   }
+
+   // 在页面加载时调用此函数
+   document.addEventListener('DOMContentLoaded', fetchGraphData);
+
         function initAutocomplete() {
             autocompleteStart = new BMap.Autocomplete({
                 "input": "start",

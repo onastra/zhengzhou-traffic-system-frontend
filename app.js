@@ -7,7 +7,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(cors({
-    origin: ['https://onastra.github.io', 'http://localhost:3000'],
+    origin: ['https://onastra.github.io', 'http://localhost:3000', 'https://zhengzhou-traffic-system-af25c13e9653.herokuapp.com/'],
     credentials: true
 }));
 app.use(express.json());
