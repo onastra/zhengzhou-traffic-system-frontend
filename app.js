@@ -6,7 +6,9 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(cors({
+    origin: 'https://onastra.github.io'
+  }));
 app.use(express.json());
 
 // Neo4j连接
