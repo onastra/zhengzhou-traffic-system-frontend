@@ -41,6 +41,10 @@ app.post('/api/save-route', async (req, res) => {
     }
 });
 
+app.get('/', (req, res) => {
+    res.send('Welcome to Zhengzhou Traffic System API');
+  });
+
 app.get('/api/graph-data', async (req, res) => {
     const query = `
         MATCH (n:Location)-[r:ROUTE_TO]->(m:Location)
