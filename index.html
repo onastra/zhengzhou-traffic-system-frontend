@@ -273,13 +273,25 @@
             }
         }
 
-        async function updateGraphData() {
-            showLoading('dataCollectionStatus', '正在更新图谱数据...');
-            
-            await initGraph();
-            
-            document.getElementById('dataCollectionStatus').innerHTML = "数据已更新";
-        }
+        function updateGraphData() {
+        fetch(`${API_BASE_URL}/api/graph-data`)
+            .then(response => response.json())
+            .then(data => {
+                console.log('Graph data:', data);
+                renderGraph(data);
+            })
+            .catch(error => console.error('Error fetching graph data:', error));
+    }
+
+    function renderGraph(data) {
+        const nodes = new vis.DataSet(data.map(item => ({ id: item.source, label: item.source })));
+        const edges = new vis.DataSet(data.map(item => ({ from: item.source, to: item.target, label: `${item.distance}\n${item.duration}` })));
+
+        const container = document.getElementById('graph');
+        const graphData = { nodes, edges };
+        const options = {};
+        new vis.Network(container, graphData, options);
+    }
 
         // 交通流量图表
         let trafficChart;
@@ -335,6 +347,7 @@
         // 页面加载完成后初始化
         window.onload = function() {
             initMap();
+            updateGraphData();
             initGraph();
             initTrafficChart();
             startRealTimeUpdates();
